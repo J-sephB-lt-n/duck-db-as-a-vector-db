@@ -52,36 +52,6 @@ with duckdb.connect(constants.DB_FILEPATH) as con:
         ;
     """
     )
-    # logger.info("Adding semantic vector columns")
-    # logger.warning(
-    #     "The way I'm adding semantic embeddings is horrible, " +
-    #     "but it's fast enough for this size of data.",
-    # )
-    # for colname in constants.FIELDS_TO_VECTORISE:
-    #     con.execute(
-    #         f"""
-    #         ALTER TABLE     use_cases
-    #         ADD COLUMN      vec_{colname} FLOAT[256]
-    #         ;
-    #         """
-    #     )
-    #     results: list[tuple] = con.execute(
-    #         f"""
-    #         SELECT      row_id
-    #                 ,   {colname}
-    #         FROM        use_cases        
-    #         ;
-    #         """
-    #     ).fetchall()
-    #     for row_id, text in results:
-    #         con.execute(
-    #             f"""
-    #             UPDATE  use_cases
-    #             SET     vec_{colname} = {embed_model.encode(text).tolist()}
-    #             WHERE   row_id = '{row_id}'
-    #             ;
-    #             """
-    #         )
     logger.info(
         "Creating HNSW semantic vector index"
     )
