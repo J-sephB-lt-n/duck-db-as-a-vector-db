@@ -1,0 +1,16 @@
+[project]
+name = "duckdb-as-a-vector-db"
+version = "0.1.0"
+description = "Using duckDB as a vector database"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "duckdb>=1.2.1",
+  "model2vec>=0.4.1",
+  "numpy>=2.2.4",
+  "polars[pyarrow]>=1.26.0",
+  "streamlit>=1.44.1",
+]
+
+[dependency-groups]
+dev = ["ipython>=9.0.2", "pylint>=3.3.6", "ruff>=0.11.2"]
