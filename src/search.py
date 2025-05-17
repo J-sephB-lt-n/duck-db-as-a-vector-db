@@ -131,7 +131,7 @@ def hybrid_rrf(
     high_rank_mitigation_constant: int = 60,
 ) -> list[dict] | pl.DataFrame:
     """
-    Return `top_k` closest results to `query` using Reciprocal Rank Fusion hybrid search
+    Return `top_k` closest results to `user_query` using Reciprocal Rank Fusion hybrid search
     (combines both BM25 and semantic search)
     """
     SUPPORTED_OUTPUT_FORMATS: Final[list[str]] = ["python_list", "polars"]
@@ -160,6 +160,13 @@ def hybrid_rrf(
     ).rename(
         lambda colname: f"semantic_{colname}" if colname!="row_id" else colname
     )
+
+    if len(bm25_df) == 0:
+        if output_format == "python_list":
+            return semantic_df.to_dicts() 
+        else:
+            return semantic_df 
+
     combined_df: pl.DataFrame = bm25_df.join(
         semantic_df,
         on="row_id",
