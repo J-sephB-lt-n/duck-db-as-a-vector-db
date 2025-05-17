@@ -13,9 +13,6 @@ def bm25(
 ) -> list[dict] | pl.DataFrame:
     """
     Return `top_k` closest results to `user_query` using BM25 (full-text search)
-    
-    Notes:
-        - Should be doing a prepared query here to avoid SQL injection
     """
     SUPPORTED_OUTPUT_FORMATS: Final[list[str]] = ["python_list", "polars"]
     if output_format not in SUPPORTED_OUTPUT_FORMATS:
@@ -25,7 +22,7 @@ def bm25(
             ",".join([f"'{x}'" for x in SUPPORTED_OUTPUT_FORMATS]) +
             "]"
         )
-    sql_query: str = f"""
+    sql_query: str = """
         SELECT      'fts_bm25' AS 'search_method'
                 ,   row_id 
                 ,   msg_text
@@ -35,19 +32,25 @@ def bm25(
                     SELECT  *
                         ,   fts_main_main.MATCH_BM25(
                                 row_id,
-                                '{user_query}',
+                                $user_query,
                                 fields := 'msg_text'
                             ) AS score
                     FROM    main
                 ) bm 
         WHERE       score IS NOT NULL
         ORDER BY    score DESC
-        LIMIT       {top_k}
+        LIMIT       $top_k 
         ;
     """
     with duckdb.connect(constants.DB_FILEPATH) as conn:
         if output_format == "python_list":
-            cursor = conn.execute(sql_query)
+            cursor = conn.execute(
+                query=sql_query,
+                parameters={
+                    "user_query": user_query,
+                    "top_k": top_k,
+                },
+            )
             col_names: list[str] = [col_data[0] for col_data in cursor.description]
             rows: list[tuple] = cursor.fetchall()
 
@@ -61,7 +64,13 @@ def bm25(
                 for row in rows
             ]
         elif output_format == "polars":
-            result = conn.sql(sql_query).pl()
+            result = conn.sql(
+                query=sql_query,
+                params={
+                    "user_query": user_query,
+                    "top_k": top_k,
+                },
+            ).pl()
 
     return result
 
@@ -73,9 +82,6 @@ def semantic(
     """
     Return `top_k` closest results to `user_query` using semantic search
     (over the semantic embedding vectors)
-
-    Notes:
-        - Should be doing a prepared query here to avoid SQL injection
     """
     SUPPORTED_OUTPUT_FORMATS: Final[list[str]] = ["python_list", "polars"]
     if output_format not in SUPPORTED_OUTPUT_FORMATS:
@@ -101,12 +107,17 @@ def semantic(
                     FROM    main
             )
         ORDER BY    similarity_score
-        LIMIT       {top_k}
+        LIMIT       $top_k
         ;
     """
     with duckdb.connect(constants.DB_FILEPATH) as conn:
         if output_format == "python_list":
-            cursor = conn.execute(sql_query)
+            cursor = conn.execute(
+                query=sql_query,
+                parameters={
+                    "top_k": top_k,
+                }
+            )
             col_names: list[str] = [col_data[0] for col_data in cursor.description]
             rows: list[tuple] = cursor.fetchall()
             result = [
@@ -119,7 +130,12 @@ def semantic(
                 for row in rows
             ]
         elif output_format == "polars":
-            result = conn.sql(sql_query).pl()
+            result = conn.sql(
+                query=sql_query,
+                params={
+                    "top_k": top_k,
+                }
+            ).pl()
 
     return result
 
