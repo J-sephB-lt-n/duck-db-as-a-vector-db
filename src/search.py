@@ -6,6 +6,7 @@ import polars as pl
 from src import constants
 from src.language_models import embed_model
 
+
 def bm25(
     user_query: str,
     top_k: int = 10,
@@ -17,10 +18,10 @@ def bm25(
     SUPPORTED_OUTPUT_FORMATS: Final[list[str]] = ["python_list", "polars"]
     if output_format not in SUPPORTED_OUTPUT_FORMATS:
         raise ValueError(
-            f"output_format='{output_format}' is not currently supported" +
-            "\nAvailable output formats are [" +
-            ",".join([f"'{x}'" for x in SUPPORTED_OUTPUT_FORMATS]) +
-            "]"
+            f"output_format='{output_format}' is not currently supported"
+            + "\nAvailable output formats are ["
+            + ",".join([f"'{x}'" for x in SUPPORTED_OUTPUT_FORMATS])
+            + "]"
         )
     sql_query: str = """
         SELECT      'fts_bm25' AS 'search_method'
@@ -57,7 +58,7 @@ def bm25(
             result = [
                 dict(
                     zip(
-                        col_names, 
+                        col_names,
                         row,
                     ),
                 )
@@ -74,6 +75,7 @@ def bm25(
 
     return result
 
+
 def semantic(
     user_query: str,
     top_k: int = 10,
@@ -86,10 +88,10 @@ def semantic(
     SUPPORTED_OUTPUT_FORMATS: Final[list[str]] = ["python_list", "polars"]
     if output_format not in SUPPORTED_OUTPUT_FORMATS:
         raise ValueError(
-            f"output_format='{output_format}' is not currently supported" +
-            "\nAvailable output formats are [" +
-            ",".join([f"'{x}'" for x in SUPPORTED_OUTPUT_FORMATS]) +
-            "]"
+            f"output_format='{output_format}' is not currently supported"
+            + "\nAvailable output formats are ["
+            + ",".join([f"'{x}'" for x in SUPPORTED_OUTPUT_FORMATS])
+            + "]"
         )
     user_query_embedding: list[float] = embed_model.encode(user_query).tolist()
     sql_query: str = f"""
@@ -116,14 +118,14 @@ def semantic(
                 query=sql_query,
                 parameters={
                     "top_k": top_k,
-                }
+                },
             )
             col_names: list[str] = [col_data[0] for col_data in cursor.description]
             rows: list[tuple] = cursor.fetchall()
             result = [
                 dict(
                     zip(
-                        col_names, 
+                        col_names,
                         row,
                     ),
                 )
@@ -134,10 +136,11 @@ def semantic(
                 query=sql_query,
                 params={
                     "top_k": top_k,
-                }
+                },
             ).pl()
 
     return result
+
 
 def hybrid_rrf(
     user_query: str,
@@ -153,35 +156,50 @@ def hybrid_rrf(
     SUPPORTED_OUTPUT_FORMATS: Final[list[str]] = ["python_list", "polars"]
     if output_format not in SUPPORTED_OUTPUT_FORMATS:
         raise ValueError(
-            f"output_format='{output_format}' is not currently supported" +
-            "\nAvailable output formats are [" +
-            ",".join([f"'{x}'" for x in SUPPORTED_OUTPUT_FORMATS]) +
-            "]"
+            f"output_format='{output_format}' is not currently supported"
+            + "\nAvailable output formats are ["
+            + ",".join([f"'{x}'" for x in SUPPORTED_OUTPUT_FORMATS])
+            + "]"
         )
-    bm25_df: pl.DataFrame = bm25(
-        user_query=user_query,
-        top_k=prefetch_k,
-        output_format="polars",
-    ).select(
-        ["row_id", "msg_text", "rank",]
-    ).rename(
-        lambda colname: f"bm25_{colname}" if colname!="row_id" else colname
+    bm25_df: pl.DataFrame = (
+        bm25(
+            user_query=user_query,
+            top_k=prefetch_k,
+            output_format="polars",
+        )
+        .select(
+            [
+                "row_id",
+                "msg_text",
+                "rank",
+            ]
+        )
+        .rename(lambda colname: f"bm25_{colname}" if colname != "row_id" else colname)
     )
     semantic_df: pl.DataFrame = semantic(
         user_query=user_query,
         top_k=prefetch_k,
         output_format="polars",
-    ).select(
-        ["row_id", "msg_text", "rank",]
-    ).rename(
-        lambda colname: f"semantic_{colname}" if colname!="row_id" else colname
     )
 
+    # if BM25 returns no results, fall back to semantic search #
     if len(bm25_df) == 0:
+        semantic_df = semantic_df.bottom_k(top_k, by="rank").sort(
+            "rank",
+            descending=False,
+        )
         if output_format == "python_list":
-            return semantic_df.to_dicts() 
+            return semantic_df.to_dicts()
         else:
-            return semantic_df 
+            return semantic_df
+
+    semantic_df = semantic_df.select(
+        [
+            "row_id",
+            "msg_text",
+            "rank",
+        ]
+    ).rename(lambda colname: f"semantic_{colname}" if colname != "row_id" else colname)
 
     combined_df: pl.DataFrame = bm25_df.join(
         semantic_df,
@@ -189,39 +207,41 @@ def hybrid_rrf(
         how="full",
         validate="1:1",
     )
-    assign_rank_to_missing: int = max(
-        bm25_df.get_column("bm25_rank").max(),
-        semantic_df.get_column("semantic_rank").max(),
-    ) + 1
+    assign_rank_to_missing: int = (
+        max(
+            bm25_df.get_column("bm25_rank").max(),
+            semantic_df.get_column("semantic_rank").max(),
+        )
+        + 1
+    )
     combined_df = combined_df.with_columns(
         pl.col("bm25_rank").fill_null(assign_rank_to_missing),
         pl.col("semantic_rank").fill_null(assign_rank_to_missing),
     )
     combined_df = combined_df.with_columns(
         (
-            ( 1 / (pl.col("bm25_rank") + high_rank_mitigation_constant) ) +
-            ( 1 / (pl.col("semantic_rank") + high_rank_mitigation_constant) )
+            (1 / (pl.col("bm25_rank") + high_rank_mitigation_constant))
+            + (1 / (pl.col("semantic_rank") + high_rank_mitigation_constant))
         ).alias("score")
     )
     combined_df = combined_df.top_k(top_k, by="score").sort("score", descending=True)
     combined_df = combined_df.with_row_index("rank", offset=1)
-    combined_df = combined_df.with_columns(
-        pl.lit("hybrid_rrf").alias("search_method")
-    )
+    combined_df = combined_df.with_columns(pl.lit("hybrid_rrf").alias("search_method"))
     combined_df = combined_df.with_columns(
         pl.col("bm25_msg_text").fill_null(pl.col("semantic_msg_text")).alias("msg_text")
     )
     combined_df = combined_df.select(
-        ["search_method",
-         "row_id",
-         "msg_text",
-         "score",
-         "rank",
-         ]
+        [
+            "search_method",
+            "row_id",
+            "msg_text",
+            "score",
+            "rank",
+        ]
     )
 
     if output_format == "python_list":
-        return combined_df.to_dicts() 
+        return combined_df.to_dicts()
 
     elif output_format == "polars":
         return combined_df

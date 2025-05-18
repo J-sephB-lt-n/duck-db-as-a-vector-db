@@ -18,7 +18,7 @@ with open(constants.INPUT_DATA_FILEPATH, "r") as file:
 main_df = pl.DataFrame({"label": labels, "msg_text": message_texts})
 
 logger.info("creating semantic embeddings")
-semantic_vectors_msg_text: np.ndarray  = embed_model.encode(
+semantic_vectors_msg_text: np.ndarray = embed_model.encode(
     main_df.get_column("msg_text").to_list()
 )
 main_df = main_df.with_columns(
@@ -38,9 +38,7 @@ with duckdb.connect(constants.DB_FILEPATH) as con:
         SET hnsw_enable_experimental_persistence = true;
         """
     )
-    logger.info(
-        f"Writing to local database {constants.DB_FILEPATH}"
-    )
+    logger.info(f"Writing to local database {constants.DB_FILEPATH}")
     con.execute("DROP TABLE IF EXISTS main;")
     con.sql(
         """
@@ -52,9 +50,7 @@ with duckdb.connect(constants.DB_FILEPATH) as con:
         ;
     """
     )
-    logger.info(
-        "Creating HNSW semantic vector index"
-    )
+    logger.info("Creating HNSW semantic vector index")
     con.execute(
         """
         CREATE INDEX    semantic_vec_hnsw_index

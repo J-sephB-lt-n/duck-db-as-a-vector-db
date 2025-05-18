@@ -13,7 +13,9 @@ search_method = st.radio("Select Search Method", ["BM25", "semantic", "hybrid (R
 
 user_query: str = st.text_input("Enter your search query")
 
-top_k = st.number_input("Number of results to return", min_value=1, max_value=999, value=5)
+top_k = st.number_input(
+    "Number of results to return", min_value=1, max_value=999, value=5
+)
 
 if st.button("Search") and user_query:
     if search_method == "BM25":
@@ -24,9 +26,7 @@ if st.button("Search") and user_query:
         )
     elif search_method == "semantic":
         results_df = search.semantic(
-            user_query=user_query,
-            top_k=top_k,
-            output_format="polars"
+            user_query=user_query, top_k=top_k, output_format="polars"
         )
     elif search_method == "hybrid (RRF)":
         results_df = search.hybrid_rrf(
